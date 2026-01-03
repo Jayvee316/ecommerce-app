@@ -4,6 +4,7 @@ import { environment } from '../../environments/environment';
 import { Order } from '../models';
 
 export interface OrderEmailData {
+  to_email: string;  // Required by EmailJS for recipient
   customer_name: string;
   customer_email: string;
   order_number: string;
@@ -35,6 +36,12 @@ export class EmailService {
   }
 
   async sendOrderConfirmation(order: Order, customerEmail: string): Promise<void> {
+    if (!customerEmail) {
+      console.warn('Cannot send order confirmation: no customer email provided');
+      return;
+    }
+
+    console.log('Sending order confirmation to:', customerEmail);
     const emailData = this.formatOrderEmailData(order, customerEmail);
 
     try {
@@ -43,7 +50,7 @@ export class EmailService {
         this.orderTemplateId,
         emailData as unknown as Record<string, unknown>
       );
-      console.log('Order confirmation email sent successfully');
+      console.log('Order confirmation email sent successfully to:', customerEmail);
     } catch (error) {
       console.error('Failed to send order confirmation email:', error);
       // Don't throw - email failure shouldn't break the checkout flow
@@ -69,6 +76,7 @@ export class EmailService {
     const paymentMethod = this.formatPaymentMethod(order.paymentMethod);
 
     return {
+      to_email: customerEmail,  // EmailJS uses this to send the email
       customer_name: order.shippingInfo.name,
       customer_email: customerEmail,
       order_number: order.orderNumber,
