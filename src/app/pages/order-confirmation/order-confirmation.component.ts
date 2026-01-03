@@ -2,6 +2,8 @@ import { Component, inject, signal, ChangeDetectionStrategy, OnInit } from '@ang
 import { ActivatedRoute, RouterLink } from '@angular/router';
 import { CurrencyPipe, DatePipe } from '@angular/common';
 import { OrderService } from '../../services/order.service';
+import { EmailService } from '../../services/email.service';
+import { AuthService } from '../../services/auth.service';
 import { Order } from '../../models';
 
 @Component({
@@ -437,13 +439,17 @@ import { Order } from '../../models';
 export class OrderConfirmationComponent implements OnInit {
   private readonly route = inject(ActivatedRoute);
   private readonly orderService = inject(OrderService);
+  private readonly emailService = inject(EmailService);
+  private readonly authService = inject(AuthService);
 
   order = signal<Order | null>(null);
   isLoading = signal(true);
   error = signal<string | null>(null);
+  emailSent = signal(false);
 
   ngOnInit(): void {
     const orderId = this.route.snapshot.paramMap.get('id');
+    const isNewOrder = this.route.snapshot.queryParamMap.get('new') === 'true';
 
     if (!orderId || isNaN(Number(orderId))) {
       this.error.set('Invalid order ID');
@@ -455,12 +461,25 @@ export class OrderConfirmationComponent implements OnInit {
       next: (order) => {
         this.order.set(order);
         this.isLoading.set(false);
+
+        // Send confirmation email only for new orders (to avoid resending on page refresh)
+        if (isNewOrder && !this.emailSent()) {
+          this.sendConfirmationEmail(order);
+        }
       },
       error: () => {
         this.error.set('Could not load order details. Please check your orders page.');
         this.isLoading.set(false);
       }
     });
+  }
+
+  private async sendConfirmationEmail(order: Order): Promise<void> {
+    const user = this.authService.currentUser();
+    if (user?.email) {
+      this.emailSent.set(true);
+      await this.emailService.sendOrderConfirmation(order, user.email);
+    }
   }
 
   formatPaymentMethod(method?: string): string {

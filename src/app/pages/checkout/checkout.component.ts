@@ -826,7 +826,9 @@ export class CheckoutComponent implements OnInit, OnDestroy, AfterViewChecked {
           }).subscribe({
             next: (confirmation) => {
               this.cartService.clearCart().subscribe();
-              this.router.navigate(['/orders', confirmation.orderId]);
+              this.router.navigate(['/orders', confirmation.orderId], {
+                queryParams: { new: 'true' }
+              });
             },
             error: (err) => {
               this.isSubmitting.set(false);
@@ -864,7 +866,9 @@ export class CheckoutComponent implements OnInit, OnDestroy, AfterViewChecked {
     this.orderService.createOrder(orderRequest).subscribe({
       next: (order) => {
         this.cartService.clearCart().subscribe();
-        this.router.navigate(['/orders', order.id]);
+        this.router.navigate(['/orders', order.id], {
+          queryParams: { new: 'true' }
+        });
       },
       error: (err) => {
         this.isSubmitting.set(false);
