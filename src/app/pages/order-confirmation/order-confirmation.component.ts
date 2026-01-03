@@ -36,6 +36,17 @@ import { Order } from '../../models';
             <h1>Order Confirmed!</h1>
             <p class="order-number">Order #{{ order()!.orderNumber }}</p>
             <p class="thank-you">Thank you for your purchase. We've received your order and will begin processing it soon.</p>
+            @if (userEmail()) {
+              <p class="email-notice">
+                <span class="email-icon">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16">
+                    <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/>
+                    <polyline points="22,6 12,13 2,6"/>
+                  </svg>
+                </span>
+                A confirmation email has been sent to <strong>{{ userEmail() }}</strong>
+              </p>
+            }
           </div>
 
           <div class="order-details">
@@ -226,6 +237,25 @@ import { Order } from '../../models';
       margin: 0;
       max-width: 400px;
       margin: 0 auto;
+    }
+
+    .email-notice {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.5rem;
+      margin-top: 1rem;
+      padding: 0.75rem 1rem;
+      background: #eff6ff;
+      border-radius: 8px;
+      color: #1e40af;
+      font-size: 0.875rem;
+    }
+
+    .email-icon {
+      display: flex;
+      align-items: center;
+      color: #2563eb;
     }
 
     .order-details {
@@ -446,10 +476,17 @@ export class OrderConfirmationComponent implements OnInit {
   isLoading = signal(true);
   error = signal<string | null>(null);
   emailSent = signal(false);
+  userEmail = signal<string | null>(null);
 
   ngOnInit(): void {
     const orderId = this.route.snapshot.paramMap.get('id');
     const isNewOrder = this.route.snapshot.queryParamMap.get('new') === 'true';
+
+    // Get user email for display
+    const user = this.authService.currentUser();
+    if (user?.email) {
+      this.userEmail.set(user.email);
+    }
 
     if (!orderId || isNaN(Number(orderId))) {
       this.error.set('Invalid order ID');
