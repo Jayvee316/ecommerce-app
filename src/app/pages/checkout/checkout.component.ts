@@ -1,4 +1,4 @@
-import { Component, inject, signal, ChangeDetectionStrategy, OnInit, OnDestroy, computed } from '@angular/core';
+import { Component, inject, signal, ChangeDetectionStrategy, OnInit, OnDestroy, AfterViewChecked } from '@angular/core';
 import { Router, RouterLink } from '@angular/router';
 import { CurrencyPipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
@@ -620,7 +620,7 @@ import { ShippingInfo } from '../../models';
     }
   `]
 })
-export class CheckoutComponent implements OnInit, OnDestroy {
+export class CheckoutComponent implements OnInit, OnDestroy, AfterViewChecked {
   protected readonly cartService = inject(CartService);
   protected readonly paymentService = inject(PaymentService);
   private readonly orderService = inject(OrderService);
@@ -647,6 +647,8 @@ export class CheckoutComponent implements OnInit, OnDestroy {
   cardError = signal<string | null>(null);
 
   private paymentIntent: PaymentIntentResponse | null = null;
+  private stripeInitialized = false;
+  private cardElementMounted = false;
 
   ngOnInit(): void {
     // Pre-fill name from user profile
@@ -661,21 +663,42 @@ export class CheckoutComponent implements OnInit, OnDestroy {
     }
   }
 
+  ngAfterViewChecked(): void {
+    // Mount card element once Stripe is loaded and DOM element exists
+    if (this.stripeInitialized && !this.cardElementMounted && this.paymentMethod === 'card') {
+      const cardContainer = document.getElementById('card-element');
+      if (cardContainer) {
+        this.mountCardElement();
+      }
+    }
+  }
+
   ngOnDestroy(): void {
     this.paymentService.destroyCardElement();
+    this.cardElementMounted = false;
   }
 
   async initializeStripe(): Promise<void> {
+    if (this.stripeInitialized) return;
+
     this.isStripeLoading.set(true);
     try {
       await this.paymentService.loadStripe();
-      // Small delay to ensure DOM is ready
-      setTimeout(() => {
-        this.paymentService.createCardElement('card-element');
-        this.setupCardValidation();
-        this.isStripeLoading.set(false);
-      }, 100);
+      this.stripeInitialized = true;
+      // Card element will be mounted in ngAfterViewChecked when DOM is ready
     } catch {
+      this.isStripeLoading.set(false);
+    }
+  }
+
+  private mountCardElement(): void {
+    try {
+      this.paymentService.createCardElement('card-element');
+      this.cardElementMounted = true;
+      this.setupCardValidation();
+      this.isStripeLoading.set(false);
+    } catch (err) {
+      console.error('Failed to mount card element:', err);
       this.isStripeLoading.set(false);
     }
   }
@@ -690,10 +713,16 @@ export class CheckoutComponent implements OnInit, OnDestroy {
   }
 
   onPaymentMethodChange(): void {
-    if (this.paymentMethod === 'card' && !this.paymentService.isStripeLoaded()) {
-      this.initializeStripe();
-    } else if (this.paymentMethod !== 'card') {
+    if (this.paymentMethod === 'card') {
+      if (!this.stripeInitialized) {
+        this.initializeStripe();
+      } else if (!this.cardElementMounted) {
+        // Stripe loaded but card not mounted - will be handled by ngAfterViewChecked
+        this.isStripeLoading.set(true);
+      }
+    } else {
       this.paymentService.destroyCardElement();
+      this.cardElementMounted = false;
     }
   }
 
