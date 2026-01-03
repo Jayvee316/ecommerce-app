@@ -1,10 +1,11 @@
-import { Component, inject, signal, ChangeDetectionStrategy, OnInit } from '@angular/core';
+import { Component, inject, signal, ChangeDetectionStrategy, OnInit, OnDestroy, computed } from '@angular/core';
 import { Router, RouterLink } from '@angular/router';
 import { CurrencyPipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { CartService } from '../../services/cart.service';
 import { OrderService, CreateOrderRequest } from '../../services/order.service';
 import { AuthService } from '../../services/auth.service';
+import { PaymentService, PaymentIntentResponse } from '../../services/payment.service';
 import { ShippingInfo } from '../../models';
 
 @Component({
@@ -124,23 +125,11 @@ import { ShippingInfo } from '../../models';
                       [(ngModel)]="paymentMethod"
                       name="paymentMethod"
                       value="card"
+                      (change)="onPaymentMethodChange()"
                     />
                     <span class="option-content">
                       <span class="option-icon">💳</span>
-                      <span class="option-label">Credit/Debit Card</span>
-                    </span>
-                  </label>
-
-                  <label class="payment-option">
-                    <input
-                      type="radio"
-                      [(ngModel)]="paymentMethod"
-                      name="paymentMethod"
-                      value="paypal"
-                    />
-                    <span class="option-content">
-                      <span class="option-icon">🅿️</span>
-                      <span class="option-label">PayPal</span>
+                      <span class="option-label">Credit/Debit Card (Stripe)</span>
                     </span>
                   </label>
 
@@ -150,6 +139,7 @@ import { ShippingInfo } from '../../models';
                       [(ngModel)]="paymentMethod"
                       name="paymentMethod"
                       value="cod"
+                      (change)="onPaymentMethodChange()"
                     />
                     <span class="option-content">
                       <span class="option-icon">💵</span>
@@ -157,6 +147,27 @@ import { ShippingInfo } from '../../models';
                     </span>
                   </label>
                 </div>
+
+                @if (paymentMethod === 'card') {
+                  <div class="stripe-card-section">
+                    @if (isStripeLoading()) {
+                      <div class="stripe-loading">
+                        <span class="spinner"></span>
+                        Loading payment form...
+                      </div>
+                    } @else if (paymentService.stripeError()) {
+                      <div class="stripe-error">
+                        {{ paymentService.stripeError() }}
+                      </div>
+                    } @else {
+                      <label for="card-element">Card Details</label>
+                      <div id="card-element" class="stripe-card-element"></div>
+                      @if (cardError()) {
+                        <div class="card-error">{{ cardError() }}</div>
+                      }
+                    }
+                  </div>
+                }
               </section>
 
               <section class="form-section">
@@ -367,6 +378,70 @@ import { ShippingInfo } from '../../models';
       font-weight: 500;
     }
 
+    .stripe-card-section {
+      margin-top: 1.5rem;
+      padding-top: 1.5rem;
+      border-top: 1px solid #eee;
+    }
+
+    .stripe-card-section label {
+      display: block;
+      font-weight: 500;
+      margin-bottom: 0.5rem;
+      font-size: 0.875rem;
+    }
+
+    .stripe-card-element {
+      padding: 0.75rem;
+      border: 1px solid #ddd;
+      border-radius: 8px;
+      background: white;
+      transition: border-color 0.2s;
+    }
+
+    .stripe-card-element:focus-within {
+      border-color: #2563eb;
+      box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+    }
+
+    .stripe-loading {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      padding: 1rem;
+      background: #f8f9fa;
+      border-radius: 8px;
+      color: #666;
+    }
+
+    .spinner {
+      width: 20px;
+      height: 20px;
+      border: 2px solid #e5e7eb;
+      border-top-color: #2563eb;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+
+    .stripe-error {
+      padding: 1rem;
+      background: #fef2f2;
+      border: 1px solid #fecaca;
+      border-radius: 8px;
+      color: #dc2626;
+      font-size: 0.875rem;
+    }
+
+    .card-error {
+      margin-top: 0.5rem;
+      color: #dc2626;
+      font-size: 0.875rem;
+    }
+
     .order-summary {
       background: white;
       border-radius: 12px;
@@ -545,8 +620,9 @@ import { ShippingInfo } from '../../models';
     }
   `]
 })
-export class CheckoutComponent implements OnInit {
+export class CheckoutComponent implements OnInit, OnDestroy {
   protected readonly cartService = inject(CartService);
+  protected readonly paymentService = inject(PaymentService);
   private readonly orderService = inject(OrderService);
   private readonly authService = inject(AuthService);
   private readonly router = inject(Router);
@@ -563,10 +639,14 @@ export class CheckoutComponent implements OnInit {
 
   paymentMethod = 'card';
   customerNotes = '';
-  shippingCost = 0;
+  shippingCost = 5.00;
 
   isSubmitting = signal(false);
+  isStripeLoading = signal(false);
   error = signal<string | null>(null);
+  cardError = signal<string | null>(null);
+
+  private paymentIntent: PaymentIntentResponse | null = null;
 
   ngOnInit(): void {
     // Pre-fill name from user profile
@@ -574,10 +654,51 @@ export class CheckoutComponent implements OnInit {
     if (user) {
       this.shippingInfo.name = user.name;
     }
+
+    // Initialize Stripe for card payments
+    if (this.paymentMethod === 'card') {
+      this.initializeStripe();
+    }
+  }
+
+  ngOnDestroy(): void {
+    this.paymentService.destroyCardElement();
+  }
+
+  async initializeStripe(): Promise<void> {
+    this.isStripeLoading.set(true);
+    try {
+      await this.paymentService.loadStripe();
+      // Small delay to ensure DOM is ready
+      setTimeout(() => {
+        this.paymentService.createCardElement('card-element');
+        this.setupCardValidation();
+        this.isStripeLoading.set(false);
+      }, 100);
+    } catch {
+      this.isStripeLoading.set(false);
+    }
+  }
+
+  private setupCardValidation(): void {
+    const cardElement = this.paymentService.getCardElement();
+    if (cardElement) {
+      cardElement.on('change', (event: { error?: { message: string } }) => {
+        this.cardError.set(event.error?.message || null);
+      });
+    }
+  }
+
+  onPaymentMethodChange(): void {
+    if (this.paymentMethod === 'card' && !this.paymentService.isStripeLoaded()) {
+      this.initializeStripe();
+    } else if (this.paymentMethod !== 'card') {
+      this.paymentService.destroyCardElement();
+    }
   }
 
   estimatedTax(): number {
-    return this.cartService.cartTotal() * 0.08;
+    return this.cartService.cartTotal() * 0.1; // 10% tax to match backend
   }
 
   orderTotal(): number {
@@ -585,7 +706,7 @@ export class CheckoutComponent implements OnInit {
   }
 
   isFormValid(): boolean {
-    return !!(
+    const baseValid = !!(
       this.shippingInfo.name &&
       this.shippingInfo.address &&
       this.shippingInfo.city &&
@@ -594,14 +715,93 @@ export class CheckoutComponent implements OnInit {
       this.shippingInfo.country &&
       this.paymentMethod
     );
+
+    if (this.paymentMethod === 'card') {
+      return baseValid && this.paymentService.isStripeLoaded() && !this.cardError();
+    }
+
+    return baseValid;
   }
 
-  placeOrder(): void {
+  async placeOrder(): Promise<void> {
     if (!this.isFormValid() || this.isSubmitting()) return;
 
     this.isSubmitting.set(true);
     this.error.set(null);
 
+    try {
+      if (this.paymentMethod === 'card') {
+        await this.processStripePayment();
+      } else {
+        await this.processCodOrder();
+      }
+    } catch (err: unknown) {
+      this.isSubmitting.set(false);
+      const errorMessage = err instanceof Error ? err.message : 'Payment failed. Please try again.';
+      this.error.set(errorMessage);
+    }
+  }
+
+  private async processStripePayment(): Promise<void> {
+    // Step 1: Create payment intent on backend
+    this.paymentService.createPaymentIntent(this.shippingCost).subscribe({
+      next: async (intent) => {
+        this.paymentIntent = intent;
+
+        try {
+          // Step 2: Confirm card payment with Stripe
+          const billingDetails = {
+            name: this.shippingInfo.name,
+            address: {
+              line1: this.shippingInfo.address,
+              city: this.shippingInfo.city,
+              state: this.shippingInfo.state,
+              postal_code: this.shippingInfo.zipCode,
+              country: this.shippingInfo.country
+            }
+          };
+
+          await this.paymentService.confirmCardPayment(intent.clientSecret, billingDetails);
+
+          // Step 3: Confirm payment on backend and create order
+          this.paymentService.confirmPayment({
+            paymentIntentId: intent.paymentIntentId,
+            shippingCost: this.shippingCost,
+            shippingAddress: {
+              name: this.shippingInfo.name,
+              address: this.shippingInfo.address,
+              city: this.shippingInfo.city,
+              state: this.shippingInfo.state,
+              zipCode: this.shippingInfo.zipCode,
+              country: this.shippingInfo.country,
+              phone: this.shippingInfo.phone
+            }
+          }).subscribe({
+            next: (confirmation) => {
+              this.cartService.clearCart().subscribe();
+              this.router.navigate(['/orders', confirmation.orderId], {
+                queryParams: { success: true }
+              });
+            },
+            error: (err) => {
+              this.isSubmitting.set(false);
+              this.error.set(err.error?.error || 'Failed to complete order. Please contact support.');
+            }
+          });
+        } catch (stripeError: unknown) {
+          this.isSubmitting.set(false);
+          const errorMessage = stripeError instanceof Error ? stripeError.message : 'Card payment failed';
+          this.error.set(errorMessage);
+        }
+      },
+      error: (err) => {
+        this.isSubmitting.set(false);
+        this.error.set(err.error?.error || 'Failed to initialize payment. Please try again.');
+      }
+    });
+  }
+
+  private async processCodOrder(): Promise<void> {
     const orderRequest: CreateOrderRequest = {
       shippingInfo: this.shippingInfo,
       paymentMethod: this.paymentMethod,
