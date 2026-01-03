@@ -69,31 +69,35 @@ export class PaymentService {
         throw new Error('Stripe publishable key not configured');
       }
 
-      // Load Stripe.js if not already loaded
-      if (!(window as any).Stripe) {
-        await this.loadStripeScript();
-      }
+      // Wait for Stripe.js to load (loaded via script tag in index.html)
+      await this.waitForStripe();
 
       this.stripe = (window as any).Stripe(config.publishableKey);
       this.isStripeLoaded.set(true);
-    } catch (error: any) {
-      this.stripeError.set(error.message || 'Failed to load Stripe');
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : 'Failed to load Stripe';
+      this.stripeError.set(errorMessage);
       throw error;
     }
   }
 
-  private loadStripeScript(): Promise<void> {
+  private waitForStripe(timeout = 10000): Promise<void> {
     return new Promise((resolve, reject) => {
       if ((window as any).Stripe) {
         resolve();
         return;
       }
 
-      const script = document.createElement('script');
-      script.src = 'https://js.stripe.com/v3/';
-      script.onload = () => resolve();
-      script.onerror = () => reject(new Error('Failed to load Stripe.js'));
-      document.head.appendChild(script);
+      const startTime = Date.now();
+      const checkInterval = setInterval(() => {
+        if ((window as any).Stripe) {
+          clearInterval(checkInterval);
+          resolve();
+        } else if (Date.now() - startTime > timeout) {
+          clearInterval(checkInterval);
+          reject(new Error('Stripe.js failed to load. Please refresh the page.'));
+        }
+      }, 100);
     });
   }
 
