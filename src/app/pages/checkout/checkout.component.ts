@@ -150,18 +150,21 @@ import { ShippingInfo } from '../../models';
 
                 @if (paymentMethod === 'card') {
                   <div class="stripe-card-section">
-                    @if (isStripeLoading()) {
-                      <div class="stripe-loading">
-                        <span class="spinner"></span>
-                        Loading payment form...
-                      </div>
-                    } @else if (paymentService.stripeError()) {
+                    @if (paymentService.stripeError()) {
                       <div class="stripe-error">
                         {{ paymentService.stripeError() }}
                       </div>
                     } @else {
                       <label for="card-element">Card Details</label>
-                      <div id="card-element" class="stripe-card-element"></div>
+                      <div class="stripe-card-wrapper">
+                        @if (isStripeLoading()) {
+                          <div class="stripe-loading-overlay">
+                            <span class="spinner"></span>
+                            Loading...
+                          </div>
+                        }
+                        <div id="card-element" class="stripe-card-element"></div>
+                      </div>
                       @if (cardError()) {
                         <div class="card-error">{{ cardError() }}</div>
                       }
@@ -391,12 +394,17 @@ import { ShippingInfo } from '../../models';
       font-size: 0.875rem;
     }
 
+    .stripe-card-wrapper {
+      position: relative;
+    }
+
     .stripe-card-element {
       padding: 0.75rem;
       border: 1px solid #ddd;
       border-radius: 8px;
       background: white;
       transition: border-color 0.2s;
+      min-height: 44px;
     }
 
     .stripe-card-element:focus-within {
@@ -404,14 +412,21 @@ import { ShippingInfo } from '../../models';
       box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
     }
 
-    .stripe-loading {
+    .stripe-loading-overlay {
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
       display: flex;
       align-items: center;
-      gap: 0.75rem;
-      padding: 1rem;
-      background: #f8f9fa;
+      justify-content: center;
+      gap: 0.5rem;
+      background: rgba(255, 255, 255, 0.9);
       border-radius: 8px;
       color: #666;
+      font-size: 0.875rem;
+      z-index: 1;
     }
 
     .spinner {
