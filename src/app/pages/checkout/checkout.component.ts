@@ -826,25 +826,31 @@ export class CheckoutComponent implements OnInit, OnDestroy, AfterViewChecked {
           }).subscribe({
             next: (confirmation) => {
               this.cartService.clearCart().subscribe();
-              this.router.navigate(['/orders', confirmation.orderId], {
-                queryParams: { success: true }
-              });
+              this.router.navigate(['/orders', confirmation.orderId]);
             },
             error: (err) => {
               this.isSubmitting.set(false);
-              this.error.set(err.error?.error || 'Failed to complete order. Please contact support.');
+              const errorMessage = err.error?.error || 'Failed to complete order. Please contact support.';
+              this.navigateToFailed('processing_error', errorMessage);
             }
           });
         } catch (stripeError: unknown) {
           this.isSubmitting.set(false);
           const errorMessage = stripeError instanceof Error ? stripeError.message : 'Card payment failed';
-          this.error.set(errorMessage);
+          this.navigateToFailed('card_declined', errorMessage);
         }
       },
       error: (err) => {
         this.isSubmitting.set(false);
-        this.error.set(err.error?.error || 'Failed to initialize payment. Please try again.');
+        const errorMessage = err.error?.error || 'Failed to initialize payment. Please try again.';
+        this.navigateToFailed('processing_error', errorMessage);
       }
+    });
+  }
+
+  private navigateToFailed(reason: string, message: string): void {
+    this.router.navigate(['/checkout/failed'], {
+      queryParams: { reason, message: encodeURIComponent(message) }
     });
   }
 
@@ -858,13 +864,12 @@ export class CheckoutComponent implements OnInit, OnDestroy, AfterViewChecked {
     this.orderService.createOrder(orderRequest).subscribe({
       next: (order) => {
         this.cartService.clearCart().subscribe();
-        this.router.navigate(['/orders', order.id], {
-          queryParams: { success: true }
-        });
+        this.router.navigate(['/orders', order.id]);
       },
       error: (err) => {
         this.isSubmitting.set(false);
-        this.error.set(err.error?.message || 'Failed to place order. Please try again.');
+        const errorMessage = err.error?.message || 'Failed to place order. Please try again.';
+        this.navigateToFailed('processing_error', errorMessage);
       }
     });
   }
