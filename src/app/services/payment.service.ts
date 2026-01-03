@@ -63,24 +63,18 @@ export class PaymentService {
 
     try {
       // Get publishable key from backend
-      console.log('Fetching Stripe config from:', `${this.apiUrl}/payment/config`);
       const config = await firstValueFrom(this.http.get<StripeConfig>(`${this.apiUrl}/payment/config`));
-      console.log('Stripe config received:', config);
 
       if (!config?.publishableKey) {
         throw new Error('Stripe publishable key not configured');
       }
 
       // Wait for Stripe.js to load (loaded via script tag in index.html)
-      console.log('Waiting for Stripe.js...');
       await this.waitForStripe();
-      console.log('Stripe.js loaded, initializing...');
 
       this.stripe = (window as any).Stripe(config.publishableKey);
       this.isStripeLoaded.set(true);
-      console.log('Stripe initialized successfully');
     } catch (error: unknown) {
-      console.error('Stripe loading error:', error);
       const errorMessage = error instanceof Error ? error.message : 'Failed to load Stripe';
       this.stripeError.set(errorMessage);
       throw error;

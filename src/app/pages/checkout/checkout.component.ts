@@ -682,7 +682,6 @@ export class CheckoutComponent implements OnInit, OnDestroy, AfterViewChecked {
     // Mount card element once Stripe is loaded and DOM element exists
     if (this.stripeInitialized && !this.cardElementMounted && this.paymentMethod === 'card') {
       const cardContainer = document.getElementById('card-element');
-      console.log('Checking for card-element:', cardContainer ? 'Found' : 'Not found');
       if (cardContainer) {
         this.mountCardElement();
       }
@@ -700,30 +699,24 @@ export class CheckoutComponent implements OnInit, OnDestroy, AfterViewChecked {
     this.isStripeLoading.set(true);
     try {
       await this.paymentService.loadStripe();
-      console.log('Setting stripeInitialized = true');
       this.stripeInitialized = true;
       // Try to mount immediately if DOM is ready
       const cardContainer = document.getElementById('card-element');
-      console.log('Card container after init:', cardContainer ? 'Found' : 'Not found');
       if (cardContainer && !this.cardElementMounted) {
         this.mountCardElement();
       }
-    } catch (err) {
-      console.error('initializeStripe error:', err);
+    } catch {
       this.isStripeLoading.set(false);
     }
   }
 
   private mountCardElement(): void {
     try {
-      console.log('Mounting card element...');
       this.paymentService.createCardElement('card-element');
       this.cardElementMounted = true;
       this.setupCardValidation();
       this.isStripeLoading.set(false);
-      console.log('Card element mounted successfully');
-    } catch (err) {
-      console.error('Failed to mount card element:', err);
+    } catch {
       this.isStripeLoading.set(false);
     }
   }
