@@ -26,19 +26,19 @@ export class CartService {
   }
 
   addToCart(productId: number, quantity: number = 1): Observable<Cart> {
-    return this.http.post<Cart>(`${this.apiUrl}/cart/items`, { productId, quantity }).pipe(
+    return this.http.post<Cart>(`${this.apiUrl}/cart`, { productId, quantity }).pipe(
       tap(cart => this.cartSignal.set(cart))
     );
   }
 
   updateQuantity(itemId: number, quantity: number): Observable<Cart> {
-    return this.http.put<Cart>(`${this.apiUrl}/cart/items/${itemId}`, { quantity }).pipe(
+    return this.http.put<Cart>(`${this.apiUrl}/cart/${itemId}`, { quantity }).pipe(
       tap(cart => this.cartSignal.set(cart))
     );
   }
 
   removeItem(itemId: number): Observable<Cart> {
-    return this.http.delete<Cart>(`${this.apiUrl}/cart/items/${itemId}`).pipe(
+    return this.http.delete<Cart>(`${this.apiUrl}/cart/${itemId}`).pipe(
       tap(cart => this.cartSignal.set(cart))
     );
   }
